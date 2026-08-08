@@ -49,7 +49,7 @@ const MODEL_MAPPING = {
   'gpt-4o': 'moonshotai/kimi-k2.6',
   'claude-3-sonnet': 'z-ai/glm-5.2',
   'gemini-pro': 'z-ai/glm-5.1',
-  'gemma-romance': 'qwen/qwen3.5-397b-a17b',
+  'gemma-romance': 'minimaxai/minimax-m3',
   'claude-3-haiku-20240307': 'minimaxai/minimax-m2.5',
   'gpt-4o-latest': 'minimaxai/minimax-m2.7',
   'claude-3-opus-20240229': 'deepseek-ai/deepseek-v4-flash',
