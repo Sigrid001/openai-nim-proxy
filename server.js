@@ -46,7 +46,7 @@ function filterReasoning(text) {
 }
 
 const MODEL_MAPPING = {
-  'gpt-4o': 'moonshotai/kimi-k2.6',
+  'gpt-4o': 'google/gemma-4-31b-it',
   'claude-3-sonnet': 'z-ai/glm-5.2',
   'gemini-pro': 'z-ai/glm-5.1',
   'gemma-romance': 'minimaxai/minimax-m3',
