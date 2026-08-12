@@ -50,8 +50,8 @@ const MODEL_MAPPING = {
   'claude-3-sonnet': 'z-ai/glm-5.2',
   'gemini-pro': 'z-ai/glm-5.1',
   'gemma-romance': 'minimaxai/minimax-m3',
-  'claude-3-haiku-20240307': 'minimaxai/minimax-m2.5',
-  'gpt-4o-latest': 'minimaxai/minimax-m2.7',
+  'claude-3-haiku-20240307': 'nvidia/nemotron-3-ultra-550b-a55b',
+  'gpt-4o-latest': 'mnvidia/nemotron-3-super-120b-a12b',
   'claude-3-opus-20240229': 'deepseek-ai/deepseek-v4-flash',
   'gpt-4-0613': 'deepseek-ai/deepseek-v4-pro' 
 };
