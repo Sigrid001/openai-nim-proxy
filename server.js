@@ -18,7 +18,11 @@ const NIM_API_KEY = process.env.NIM_API_KEY;
 // ============================================================================
 const SHOW_REASONING = true; 
 const ENABLE_THINKING_MODE = true; 
-const DEEPSEEK_REASONING_MODE = "high"; 
+const DEEPSEEK_REASONING_MODE = "high";
+const payload = {
+    ...req.body,
+    reasoning_effort: req.body.reasoning_effort || "low"
+};
 // ============================================================================
 
 function filterReasoning(text) {
