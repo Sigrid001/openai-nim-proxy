@@ -21,7 +21,7 @@ const ENABLE_THINKING_MODE = true;
 const DEEPSEEK_REASONING_MODE = "high";
 const payload = {
     ...req.body,
-    reasoning_effort: req.body.reasoning_effort || "low"
+    reasoning_effort: req.body.reasoning_effort || "medium"
 };
 // ============================================================================
 
