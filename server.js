@@ -1,4 +1,4 @@
-// server.js - THE ULTIMATE CLEANER (BULLETPROOF STREAMING VERSION)
+// server.js - ULTIMATE CLEANER (WITH NVIDIA THINKING FIX)
 // ============================================================================
 const express = require('express');
 const cors = require('cors');
@@ -16,13 +16,9 @@ const NIM_API_KEY = process.env.NIM_API_KEY;
 // ============================================================================
 // 🔥 MAIN CONTROLS
 // ============================================================================
-const SHOW_REASONING = true; 
+const SHOW_REASONING = false; 
 const ENABLE_THINKING_MODE = true; 
-const DEEPSEEK_REASONING_MODE = "high";
-const payload = {
-    ...req.body,
-    reasoning_effort: req.body.reasoning_effort || "medium"
-};
+const DEEPSEEK_REASONING_MODE = "max"; 
 // ============================================================================
 
 function filterReasoning(text) {
@@ -50,19 +46,19 @@ function filterReasoning(text) {
 }
 
 const MODEL_MAPPING = {
-  'gpt-4o': 'google/gemma-4-31b-it',
-  'claude-3-sonnet': 'z-ai/glm-5.2',
+  'gpt-4o': 'moonshotai/kimi-k2.6',
+  'claude-3-sonnet': 'z-ai/glm4.7',
   'gemini-pro': 'z-ai/glm-5.1',
-  'gemma-romance': 'minimaxai/minimax-m3',
-  'claude-3-haiku-20240307': 'nvidia/nemotron-3-ultra-550b-a55b',
-  'gpt-4o-latest': 'mnvidia/nemotron-3-super-120b-a12b',
-  'claude-3-opus-20240229': 'deepseek-ai/deepseek-v4-flash-0731',
+  'gemma-romance': 'qwen/qwen3.5-397b-a17b',
+  'claude-3-haiku-20240307': 'minimaxai/minimax-m2.5',
+  'gpt-4o-latest': 'minimaxai/minimax-m2.7',
+  'claude-3-opus-20240229': 'deepseek-ai/deepseek-v4-flash',
   'gpt-4-0613': 'deepseek-ai/deepseek-v4-pro' 
 };
 
 app.post('/v1/chat/completions', async (req, res) => {
   try {
-    let { model, messages, temperature, max_tokens, stream } = req.body;
+    let { model, messages, temperature, max_tokens, stream, reasoning_effort } = req.body;
     let isStream = stream || false; 
 
     let nimModel = MODEL_MAPPING[model] || model;
@@ -87,17 +83,15 @@ app.post('/v1/chat/completions', async (req, res) => {
       sanitizedMessages[sanitizedMessages.length - 1].content += thinkingPrompt;
     }
 
+    // 🟢 DI SINI TEMPAT KOD REQ TU PATUT DUDUK:
     const nimRequest = {
       model: nimModel,
       messages: sanitizedMessages,
       temperature: temperature || 0.6,
       max_tokens: max_tokens || 4096,
-      stream: isStream 
+      stream: isStream,
+      reasoning_effort: reasoning_effort || DEEPSEEK_REASONING_MODE || "medium"
     };
-
-    if (isDeepSeek) {
-      nimRequest.reasoning_effort = DEEPSEEK_REASONING_MODE;
-    }
 
     if (!isStream) {
       const response = await axios.post(`${NIM_API_BASE}/chat/completions`, nimRequest, {
@@ -132,7 +126,6 @@ app.post('/v1/chat/completions', async (req, res) => {
         res.write(chunk);
       });
 
-      // 🟢 FIX 1: TAMBAH ERROR HANDLER SUPAYA SEBARANG SALURAN PUTUS TAK CRASHKAN PROXY
       response.data.on('error', (err) => {
         console.error('🔥 Stream data error:', err.message);
         res.end(); 
@@ -145,7 +138,6 @@ app.post('/v1/chat/completions', async (req, res) => {
 
   } catch (error) {
     console.error('🔥 ERROR:', error.message);
-    // 🟢 FIX 2: KALAU HEADERS DAH TERHANTAR TAPI SANGKUT, WAJIB TUTUP SAMBUNGAN SUPAYA TAK HANGING
     if (!res.headersSent) {
       res.status(error.response?.status || 500).json({ error: { message: error.message } });
     } else {
