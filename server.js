@@ -18,7 +18,7 @@ const NIM_API_KEY = process.env.NIM_API_KEY;
 // ============================================================================
 const SHOW_REASONING = false; 
 const ENABLE_THINKING_MODE = true; 
-const DEEPSEEK_REASONING_MODE = "max"; 
+const DEEPSEEK_REASONING_MODE = "none"; 
 // ============================================================================
 
 function filterReasoning(text) {
@@ -46,13 +46,13 @@ function filterReasoning(text) {
 }
 
 const MODEL_MAPPING = {
-  'gpt-4o': 'moonshotai/kimi-k2.6',
+  'gpt-4o': 'nvidia/nemotron-3-ultra-550b-a55b',
   'claude-3-sonnet': 'z-ai/glm4.7',
   'gemini-pro': 'z-ai/glm-5.1',
-  'gemma-romance': 'qwen/qwen3.5-397b-a17b',
-  'claude-3-haiku-20240307': 'minimaxai/minimax-m2.5',
+  'gemma-romance': 'nvidia/nemotron-3-super-120b-a12b',
+  'claude-3-haiku-20240307': 'minimaxai/minimax-m3',
   'gpt-4o-latest': 'minimaxai/minimax-m2.7',
-  'claude-3-opus-20240229': 'deepseek-ai/deepseek-v4-flash',
+  'claude-3-opus-20240229': 'deepseek-ai/deepseek-v4-flash-0731',
   'gpt-4-0613': 'deepseek-ai/deepseek-v4-pro' 
 };
 
