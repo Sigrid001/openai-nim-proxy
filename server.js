@@ -1,4 +1,4 @@
-// server.js - NEMOTRON 3 ULTRA & MULTI-MODEL PROXY (READY TO USE)
+// server.js - FULL COMPLETE WORKING FILE
 // ============================================================================
 const express = require('express');
 const cors = require('cors');
@@ -11,24 +11,20 @@ app.use(cors());
 app.use(express.json({ limit: '100mb' }));
 
 const NIM_API_BASE = process.env.NIM_API_BASE || 'https://integrate.api.nvidia.com/v1';
-const NIM_API_KEY = process.env.NIM_API_KEY || 'MASUKKAN_KEY_NVIDIA_ANDA_DI_SINI';
+const NIM_API_KEY = process.env.NIM_API_KEY || '';
 
 // ============================================================================
-// 🔥 1. TEMPAT ANDA TUKAR / TOGGLE SETTING SERVER (EDIT DI SINI)
+// 🔥 SETTING KAWALAN (TUKAR DI SINI)
 // ============================================================================
-
-// A) TAHAP THINKING MODE:
-// Pilihan: "none" (tutup), "low" (pendek), "medium" (biasa), "high" (paling mendalam)
+// 1. TAHAP THINKING: "none" (tutup), "low" (pendek), "medium" (biasa), "high" (max)
 const GLOBAL_REASONING_EFFORT = "medium"; 
 
-// B) NAK TUNJUK ATAU SOROK PROSES PEMIKIRAN (<think>):
-// true  = Anda DAPAT lihat isi pemikiran <think>...</think>
-// false = Bersihkan dan BUANG teks pemikiran (dapat jawapan akhir sahaja)
+// 2. NAK TUNJUK ISI <think> ATAU TIDAK:
+// true  = Tunjuk teks berfikir
+// false = Padam/sorok teks berfikir (dapat jawapan bersih sahaja)
 const SHOW_REASONING = false; 
-
 // ============================================================================
 
-// Mapping model
 const MODEL_MAPPING = {
   'gpt-4o': 'nvidia/nemotron-3-ultra-550b-a55b',
   'claude-3-sonnet': 'z-ai/glm4.7',
@@ -40,7 +36,6 @@ const MODEL_MAPPING = {
   'gpt-4-0613': 'deepseek-ai/deepseek-v4-pro' 
 };
 
-// Fungsi penapis reasoning (jika SHOW_REASONING = false)
 function filterReasoning(text) {
   if (!text) return text;
   
@@ -50,4 +45,146 @@ function filterReasoning(text) {
 
   const garbagePhrases = [
     "\\*Okay, let me analyze", "\\*The scene:", "\\*The user wants me to",
-    "\\*Current situation:",
+    "\\*Current situation:", "\\*Key elements to include:", "\\*I need to describe:",
+    "\\*Evelyn's psychology:", "\\*How would Evelyn react\\?", "\\*Physical details to describe:",
+    "\\*I need to avoid:", "\\*I should focus on:", "\\*The act of sliding", "\\*Sound integration:",
+    "\\*Analysis:", "\\*Thought Process:", "\\*Reasoning:", "Thought:\n"
+  ];
+
+  garbagePhrases.forEach(phrase => {
+    let regex = new RegExp(phrase + "[\\s\\S]*?\\n\\n", "gi");
+    cleanText = cleanText.replace(regex, '');
+  });
+
+  cleanText = cleanText.replace(/\n- [\s\S]*?\n\n/gi, '\n\n');
+  cleanText = cleanText.replace(/\d\. [\s\S]*?\n\n/gi, '\n\n');
+
+  return cleanText.trim();
+}
+
+function getNemotronPromptByLevel(level) {
+  switch (level) {
+    case 'low':
+      return "\n\n[SYSTEM INSTRUCTION: Provide a brief, concise reasoning inside <think>...</think> before giving the final answer.]";
+    case 'high':
+    case 'max':
+      return "\n\n[SYSTEM INSTRUCTION: You must think extremely deeply, analyze all edge cases, verify step-by-step logic thoroughly, and plan exhaustively inside <think>...</think> tags before writing your final response.]";
+    case 'medium':
+    default:
+      return "\n\n[SYSTEM INSTRUCTION: Please reason through this carefully step-by-step inside <think>...</think> tags before providing the final answer.]";
+  }
+}
+
+app.post('/v1/chat/completions', async (req, res) => {
+  try {
+    let { model, messages, temperature, max_tokens, stream, reasoning_effort } = req.body;
+    let isStream = stream || false; 
+
+    let nimModel = MODEL_MAPPING[model] || model;
+    
+    const isGLM = nimModel.toLowerCase().includes('glm');
+    const isDeepSeek = nimModel.toLowerCase().includes('deepseek');
+    const isNemotron = nimModel.toLowerCase().includes('nemotron');
+
+    const effortLevel = (reasoning_effort || GLOBAL_REASONING_EFFORT).toLowerCase();
+    const isThinkingActive = effortLevel !== "none" && effortLevel !== "off" && effortLevel !== "false";
+
+    let sanitizedMessages = [];
+    if (Array.isArray(messages)) {
+      for (let m of messages) {
+        if (!m || !m.content || m.content.trim() === "") continue; 
+        let role = m.role === 'system' ? 'user' : m.role; 
+        
+        if (sanitizedMessages.length > 0 && sanitizedMessages[sanitizedMessages.length - 1].role === role) {
+          sanitizedMessages[sanitizedMessages.length - 1].content += "\n\n" + m.content;
+        } else {
+          sanitizedMessages.push({ role: role, content: m.content });
+        }
+      }
+    }
+
+    if (isThinkingActive && sanitizedMessages.length > 0) {
+      if (isNemotron) {
+        sanitizedMessages[sanitizedMessages.length - 1].content += getNemotronPromptByLevel(effortLevel);
+      } else if (isGLM) {
+        sanitizedMessages[sanitizedMessages.length - 1].content += "\n\n[SYSTEM INSTRUCTION: Think deeply before answering. Use <think> tags for reasoning.]";
+      }
+    }
+
+    const nimRequest = {
+      model: nimModel,
+      messages: sanitizedMessages,
+      temperature: temperature !== undefined ? temperature : 0.6,
+      max_tokens: max_tokens || 4096,
+      stream: isStream
+    };
+
+    if (isNemotron) {
+      nimRequest.chat_template_kwargs = {
+        enable_thinking: isThinkingActive
+      };
+    }
+
+    if (isDeepSeek && isThinkingActive) {
+      nimRequest.reasoning_effort = effortLevel;
+    }
+
+    if (!isStream) {
+      const response = await axios.post(`${NIM_API_BASE}/chat/completions`, nimRequest, {
+        headers: {
+          'Authorization': `Bearer ${NIM_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.data && response.data.choices && response.data.choices[0] && response.data.choices[0].message) {
+        let originalContent = response.data.choices[0].message.content;
+        if (!SHOW_REASONING) {
+          response.data.choices[0].message.content = filterReasoning(originalContent);
+        }
+      }
+      return res.json(response.data);
+
+    } else {
+      const response = await axios.post(`${NIM_API_BASE}/chat/completions`, nimRequest, {
+        headers: {
+          'Authorization': `Bearer ${NIM_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        responseType: 'stream'
+      });
+
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+
+      response.data.on('data', (chunk) => {
+        res.write(chunk);
+      });
+
+      response.data.on('error', (err) => {
+        console.error('🔥 Stream error:', err.message);
+        res.end(); 
+      });
+
+      response.data.on('end', () => {
+        res.end();
+      });
+    }
+
+  } catch (error) {
+    console.error('🔥 ERROR:', error.response?.data || error.message);
+    if (!res.headersSent) {
+      res.status(error.response?.status || 500).json({ 
+        error: { 
+          message: error.message, 
+          details: error.response?.data 
+        } 
+      });
+    } else {
+      res.end(); 
+    }
+  }
+});
+
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
