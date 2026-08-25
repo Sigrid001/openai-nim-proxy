@@ -56,7 +56,7 @@ const MODEL_MAPPING = {
   'gemma-romance': 'minimaxai/minimax-m3',
   'claude-3-haiku-20240307': 'nvidia/nemotron-3-ultra-550b-a55b',
   'gpt-4o-latest': 'mnvidia/nemotron-3-super-120b-a12b',
-  'claude-3-opus-20240229': 'deepseek-ai/deepseek-v4-flash',
+  'claude-3-opus-20240229': 'deepseek-ai/deepseek-v4-flash-0731',
   'gpt-4-0613': 'deepseek-ai/deepseek-v4-pro' 
 };
 
