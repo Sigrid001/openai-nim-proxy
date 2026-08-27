@@ -1,4 +1,4 @@
-// server.js - FULL COMPLETE WORKING FILE
+// server.js - FULL ACCURATE WORKING FILE (NVIDIA NIM SPEC)
 // ============================================================================
 const express = require('express');
 const cors = require('cors');
@@ -16,19 +16,16 @@ const NIM_API_KEY = process.env.NIM_API_KEY || '';
 // ============================================================================
 // 🔥 SETTING KAWALAN (TUKAR DI SINI)
 // ============================================================================
-// 1. TAHAP THINKING GLOBAL (Untuk Nemotron / GLM dll): "none", "low", "medium", "high"
+// 1. TAHAP THINKING GLOBAL (Nemotron / GLM dll): "none", "low", "medium", "high"
 const GLOBAL_REASONING_EFFORT = "medium"; 
 
-// 🔥 2. KHAS UNTUK DEEPSEEK SAHAJA (Flash & Pro):
-//    "none"   -> Tutup terus reasoning mode
-//    "low"    -> Mode 1: Reasoning seringkas mungkin & pantas
-//    "medium" -> Mode 2: Standard step-by-step reasoning
-//    "high"   -> Mode 3: Maksimum deep thinking & analisa penuh
+// 🔥 2. KHAS DEEPSEEK V4 (Flash 0731 / Pro 0813):
+//    Pilihan rasmi: "none" (tutup), "low" (cepat), "high" (mendalam), "max" (maksimum)
 const DEEPSEEK_REASONING_MODE = "high"; 
 
-// 3. NAK TUNJUK ISI <think> ATAU TIDAK:
-// true  = Tunjuk teks berfikir
-// false = Padam/sorok teks berfikir (dapat jawapan bersih sahaja)
+// 3. NAK TUNJUK ISI THINKING ATAU TIDAK:
+// true  = Tunjuk teks <think> / reasoning
+// false = Bersihkan dan bagi jawapan terus
 const SHOW_REASONING = false; 
 // ============================================================================
 
@@ -82,26 +79,22 @@ function getNemotronPromptByLevel(level) {
   }
 }
 
-// 3 Mod Reasoning Khas DeepSeek
+// System guidance untuk DeepSeek V4
 function getDeepSeekPromptByLevel(level) {
   switch (level) {
     case 'low':
-      // Mode 1: Ringkas & jimat token
-      return "\n\n[SYSTEM INSTRUCTION: Provide a minimal and concise reasoning inside <think>...</think> focusing strictly on core logic and constraints before giving your response.]";
-    case 'high':
+      return "\n\n[SYSTEM INSTRUCTION: Provide a minimal, concise reasoning inside <think>...</think> before answering.]";
     case 'max':
-      // Mode 3: Deep exploration & full analysis
-      return "\n\n[SYSTEM INSTRUCTION: Engage in comprehensive, rigorous, and exhaustive reasoning inside <think>...</think>. Explore alternative perspectives, systematically verify every intermediate step, test edge cases, and self-correct before presenting your final answer.]";
-    case 'medium':
+      return "\n\n[SYSTEM INSTRUCTION: Engage in exhaustive, rigorous reasoning inside <think>...</think>. Explore edge cases and verify step-by-step logic thoroughly before answering.]";
+    case 'high':
     default:
-      // Mode 2: Standard
-      return "\n\n[SYSTEM INSTRUCTION: Reason step-by-step thoroughly inside <think>...</think> to logically solve the prompt before providing the final response.]";
+      return "\n\n[SYSTEM INSTRUCTION: Reason step-by-step thoroughly inside <think>...</think> before answering.]";
   }
 }
 
 app.post('/v1/chat/completions', async (req, res) => {
   try {
-    let { model, messages, temperature, max_tokens, stream, reasoning_effort } = req.body;
+    let { model, messages, temperature, max_tokens, stream, reasoning_effort, top_p } = req.body;
     let isStream = stream || false; 
 
     let nimModel = MODEL_MAPPING[model] || model;
@@ -110,10 +103,12 @@ app.post('/v1/chat/completions', async (req, res) => {
     const isDeepSeek = nimModel.toLowerCase().includes('deepseek');
     const isNemotron = nimModel.toLowerCase().includes('nemotron');
 
-    // 👉 PENGASINGAN SETTING: Guna DEEPSEEK_REASONING_MODE jika model DeepSeek
+    // Tentukan effort level
     let effortLevel;
     if (isDeepSeek) {
       effortLevel = (reasoning_effort || DEEPSEEK_REASONING_MODE).toLowerCase();
+      // Selaraskan mapping "medium" ke standard DeepSeek "high" jika user guna medium
+      if (effortLevel === 'medium') effortLevel = 'high';
     } else {
       effortLevel = (reasoning_effort || GLOBAL_REASONING_EFFORT).toLowerCase();
     }
@@ -134,7 +129,7 @@ app.post('/v1/chat/completions', async (req, res) => {
       }
     }
 
-    // Suntik prompt mengikut model & mode masing-masing
+    // Suntik prompt sokongan
     if (isThinkingActive && sanitizedMessages.length > 0) {
       if (isDeepSeek) {
         sanitizedMessages[sanitizedMessages.length - 1].content += getDeepSeekPromptByLevel(effortLevel);
@@ -148,28 +143,29 @@ app.post('/v1/chat/completions', async (req, res) => {
     const nimRequest = {
       model: nimModel,
       messages: sanitizedMessages,
-      temperature: temperature !== undefined ? temperature : 0.6,
-      max_tokens: max_tokens || 4096,
+      // Sampling defaults
+      temperature: temperature !== undefined ? temperature : (isDeepSeek ? 1.0 : 0.6),
+      top_p: top_p !== undefined ? top_p : (isDeepSeek ? 0.95 : 1.0),
+      max_tokens: max_tokens || (isDeepSeek ? 16384 : 4096),
       stream: isStream
     };
 
+    // 1. Parameter untuk Nemotron (menggunakan enable_thinking)
     if (isNemotron) {
       nimRequest.chat_template_kwargs = {
         enable_thinking: isThinkingActive
       };
     }
 
-    // Parameter khas DeepSeek
+    // 2. Parameter rasmi DeepSeek-V4 NVIDIA NIM (thinking: true/false + reasoning_effort)
     if (isDeepSeek) {
+      nimRequest.chat_template_kwargs = {
+        thinking: isThinkingActive,
+        ...(isThinkingActive ? { reasoning_effort: effortLevel } : {})
+      };
+      // Hantar juga top-level sebagai fallback
       if (isThinkingActive) {
         nimRequest.reasoning_effort = effortLevel;
-        nimRequest.chat_template_kwargs = {
-          enable_thinking: true
-        };
-      } else {
-        nimRequest.chat_template_kwargs = {
-          enable_thinking: false
-        };
       }
     }
 
@@ -182,9 +178,13 @@ app.post('/v1/chat/completions', async (req, res) => {
       });
 
       if (response.data && response.data.choices && response.data.choices[0] && response.data.choices[0].message) {
-        let originalContent = response.data.choices[0].message.content;
+        let msg = response.data.choices[0].message;
+        
+        // Handle filter jika SHOW_REASONING = false
         if (!SHOW_REASONING) {
-          response.data.choices[0].message.content = filterReasoning(originalContent);
+          if (msg.content) msg.content = filterReasoning(msg.content);
+          if (msg.reasoning_content) delete msg.reasoning_content;
+          if (msg.reasoning) delete msg.reasoning;
         }
       }
       return res.json(response.data);
@@ -231,4 +231,4 @@ app.post('/v1/chat/completions', async (req, res) => {
   }
 });
 
-app.listen(PORT,
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
