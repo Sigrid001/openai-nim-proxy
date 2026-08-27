@@ -33,7 +33,7 @@ const MODEL_MAPPING = {
   'claude-3-haiku-20240307': 'minimaxai/minimax-m3',
   'gpt-4o-latest': 'minimaxai/minimax-m2.7',
   'claude-3-opus-20240229': 'deepseek-ai/deepseek-v4-flash-0731',
-  'gpt-4-0613': 'deepseek-ai/deepseek-v4-pro' 
+  'gpt-4-0613': 'deepseek-ai/deepseek-v4-pro-0813' 
 };
 
 function filterReasoning(text) {
