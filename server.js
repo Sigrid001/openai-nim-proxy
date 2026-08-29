@@ -33,14 +33,11 @@ const MODEL_MAPPING = {
   'gpt-4o': 'nvidia/nemotron-3-ultra-550b-a55b',
   'claude-3-sonnet': 'z-ai/glm4.7',
   'gemini-pro': 'z-ai/glm-5.1',
-  'gemma-romance': 'nvidia/nemotron-3-super-120b-a12b',
+  'gemma-romance': 'moonshotai/kimi-k3',
   'claude-3-haiku-20240307': 'minimaxai/minimax-m3',
   'gpt-4o-latest': 'minimaxai/minimax-m2.7',
   'claude-3-opus-20240229': 'deepseek-ai/deepseek-v4-flash-0731',
   'gpt-4-0613': 'deepseek-ai/deepseek-v4-pro-0813',
-  'kimi-k3': 'moonshotai/kimi-k3',
-  'kimishot-k3': 'moonshotai/kimi-k3',
-  'moonshot-k3': 'moonshotai/kimi-k3'
 };
 
 function filterReasoning(text) {
