@@ -1,4 +1,4 @@
-// server.js - FULL ACCURATE WORKING FILE (NVIDIA NIM SPEC)
+// server.js - FULL COMPLETE WORKING FILE (DEEPSEEK + KIMI K3 INCLUDED)
 // ============================================================================
 const express = require('express');
 const cors = require('cors');
@@ -19,12 +19,16 @@ const NIM_API_KEY = process.env.NIM_API_KEY || '';
 // 1. TAHAP THINKING GLOBAL (Nemotron / GLM dll): "none", "low", "medium", "high"
 const GLOBAL_REASONING_EFFORT = "medium"; 
 
-// 🔥 2. KHAS DEEPSEEK V4 (Flash 0731 / Pro 0813):
-//    Pilihan rasmi: "none" (tutup), "low" (cepat), "high" (mendalam), "max" (maksimum)
+// 🔥 2. KHAS UNTUK DEEPSEEK (Flash 0731 / Pro 0813):
+//    Pilihan: "none", "low", "high", "max"
 const DEEPSEEK_REASONING_MODE = "high"; 
 
-// 3. NAK TUNJUK ISI THINKING ATAU TIDAK:
-// true  = Tunjuk teks <think> / reasoning
+// 🔥 3. KHAS UNTUK MOONSHOT AI (Kimi-K3 / Kimishot):
+//    Pilihan rasmi: "low" (cepat/jimat), "high" (standard), "max" (maksimum/agentic)
+const MOONSHOT_REASONING_MODE = "max"; 
+
+// 4. NAK TUNJUK ISI THINKING ATAU TIDAK:
+// true  = Tunjuk teks <think> / reasoning_content
 // false = Bersihkan dan bagi jawapan terus
 const SHOW_REASONING = false; 
 // ============================================================================
@@ -32,12 +36,17 @@ const SHOW_REASONING = false;
 const MODEL_MAPPING = {
   'gpt-4o': 'nvidia/nemotron-3-ultra-550b-a55b',
   'claude-3-sonnet': 'z-ai/glm4.7',
-  'gemini-pro': 'z-ai/glm-5.1',
+  'gemini-pro': 'moonshotai/kimi-k3',
   'gemma-romance': 'nvidia/nemotron-3-super-120b-a12b',
   'claude-3-haiku-20240307': 'minimaxai/minimax-m3',
   'gpt-4o-latest': 'minimaxai/minimax-m2.7',
   'claude-3-opus-20240229': 'deepseek-ai/deepseek-v4-flash-0731',
-  'gpt-4-0613': 'deepseek-ai/deepseek-v4-pro-0813' 
+  'gpt-4-0613': 'deepseek-ai/deepseek-v4-pro-0813',
+  
+  // 👉 Model Kimi K3 Moonshot AI
+  'kimi-k3': 'moonshotai/kimi-k3',
+  'kimishot-k3': 'moonshotai/kimi-k3',
+  'moonshot-k3': 'moonshotai/kimi-k3'
 };
 
 function filterReasoning(text) {
@@ -79,7 +88,6 @@ function getNemotronPromptByLevel(level) {
   }
 }
 
-// System guidance untuk DeepSeek V4
 function getDeepSeekPromptByLevel(level) {
   switch (level) {
     case 'low':
@@ -89,6 +97,19 @@ function getDeepSeekPromptByLevel(level) {
     case 'high':
     default:
       return "\n\n[SYSTEM INSTRUCTION: Reason step-by-step thoroughly inside <think>...</think> before answering.]";
+  }
+}
+
+// System guidance khas untuk Kimi-K3 Moonshot AI
+function getMoonshotPromptByLevel(level) {
+  switch (level) {
+    case 'low':
+      return "\n\n[SYSTEM INSTRUCTION: Keep thinking process short, concise, and focused on core constraints before outputting response.]";
+    case 'max':
+      return "\n\n[SYSTEM INSTRUCTION: Perform maximum long-horizon reasoning and thorough multi-step planning before providing the final result.]";
+    case 'high':
+    default:
+      return "\n\n[SYSTEM INSTRUCTION: Reason step-by-step carefully to solve the problem thoroughly.]";
   }
 }
 
@@ -102,12 +123,15 @@ app.post('/v1/chat/completions', async (req, res) => {
     const isGLM = nimModel.toLowerCase().includes('glm');
     const isDeepSeek = nimModel.toLowerCase().includes('deepseek');
     const isNemotron = nimModel.toLowerCase().includes('nemotron');
+    const isMoonshot = nimModel.toLowerCase().includes('moonshot') || nimModel.toLowerCase().includes('kimi');
 
-    // Tentukan effort level
+    // 👉 Tentukan effort level mengikut model masing-masing
     let effortLevel;
-    if (isDeepSeek) {
+    if (isMoonshot) {
+      effortLevel = (reasoning_effort || MOONSHOT_REASONING_MODE).toLowerCase();
+      if (effortLevel === 'medium') effortLevel = 'high';
+    } else if (isDeepSeek) {
       effortLevel = (reasoning_effort || DEEPSEEK_REASONING_MODE).toLowerCase();
-      // Selaraskan mapping "medium" ke standard DeepSeek "high" jika user guna medium
       if (effortLevel === 'medium') effortLevel = 'high';
     } else {
       effortLevel = (reasoning_effort || GLOBAL_REASONING_EFFORT).toLowerCase();
@@ -129,9 +153,11 @@ app.post('/v1/chat/completions', async (req, res) => {
       }
     }
 
-    // Suntik prompt sokongan
+    // Suntik prompt sokongan mengikut model
     if (isThinkingActive && sanitizedMessages.length > 0) {
-      if (isDeepSeek) {
+      if (isMoonshot) {
+        sanitizedMessages[sanitizedMessages.length - 1].content += getMoonshotPromptByLevel(effortLevel);
+      } else if (isDeepSeek) {
         sanitizedMessages[sanitizedMessages.length - 1].content += getDeepSeekPromptByLevel(effortLevel);
       } else if (isNemotron) {
         sanitizedMessages[sanitizedMessages.length - 1].content += getNemotronPromptByLevel(effortLevel);
@@ -140,33 +166,44 @@ app.post('/v1/chat/completions', async (req, res) => {
       }
     }
 
+    const isReasoningModel = isDeepSeek || isMoonshot;
+
     const nimRequest = {
       model: nimModel,
       messages: sanitizedMessages,
-      // Sampling defaults
-      temperature: temperature !== undefined ? temperature : (isDeepSeek ? 1.0 : 0.6),
-      top_p: top_p !== undefined ? top_p : (isDeepSeek ? 0.95 : 1.0),
-      max_tokens: max_tokens || (isDeepSeek ? 16384 : 4096),
+      // Parameter sampling yang disyorkan
+      temperature: temperature !== undefined ? temperature : (isReasoningModel ? 1.0 : 0.6),
+      top_p: top_p !== undefined ? top_p : (isReasoningModel ? 0.95 : 1.0),
+      max_tokens: max_tokens || (isReasoningModel ? 16384 : 4096),
       stream: isStream
     };
 
-    // 1. Parameter untuk Nemotron (menggunakan enable_thinking)
+    // 1. Nemotron
     if (isNemotron) {
       nimRequest.chat_template_kwargs = {
         enable_thinking: isThinkingActive
       };
     }
 
-    // 2. Parameter rasmi DeepSeek-V4 NVIDIA NIM (thinking: true/false + reasoning_effort)
+    // 2. DeepSeek V4
     if (isDeepSeek) {
       nimRequest.chat_template_kwargs = {
         thinking: isThinkingActive,
         ...(isThinkingActive ? { reasoning_effort: effortLevel } : {})
       };
-      // Hantar juga top-level sebagai fallback
       if (isThinkingActive) {
         nimRequest.reasoning_effort = effortLevel;
       }
+    }
+
+    // 3. Moonshot AI / Kimi-K3
+    if (isMoonshot) {
+      // Kimi K3 menyokong top-level reasoning_effort serta template kwargs
+      nimRequest.reasoning_effort = effortLevel; // "low" | "high" | "max"
+      nimRequest.chat_template_kwargs = {
+        thinking: true,
+        reasoning_effort: effortLevel
+      };
     }
 
     if (!isStream) {
@@ -180,7 +217,6 @@ app.post('/v1/chat/completions', async (req, res) => {
       if (response.data && response.data.choices && response.data.choices[0] && response.data.choices[0].message) {
         let msg = response.data.choices[0].message;
         
-        // Handle filter jika SHOW_REASONING = false
         if (!SHOW_REASONING) {
           if (msg.content) msg.content = filterReasoning(msg.content);
           if (msg.reasoning_content) delete msg.reasoning_content;
