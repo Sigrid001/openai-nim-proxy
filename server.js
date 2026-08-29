@@ -1,4 +1,4 @@
-// server.js - FULL COMPLETE WORKING FILE (DEEPSEEK + KIMI K3 INCLUDED)
+// server.js - CLEAN NO-AUTH & NIM 400 FIX
 // ============================================================================
 const express = require('express');
 const cors = require('cors');
@@ -14,43 +14,37 @@ const NIM_API_BASE = process.env.NIM_API_BASE || 'https://integrate.api.nvidia.c
 const NIM_API_KEY = process.env.NIM_API_KEY || '';
 
 // ============================================================================
-// 🔥 SETTING KAWALAN (TUKAR DI SINI)
+// 🔥 SETTING KAWALAN THINKING / REASONING
 // ============================================================================
-// 1. TAHAP THINKING GLOBAL (Nemotron / GLM dll): "none", "low", "medium", "high"
+// 1. Nemotron / GLM dll: "none", "low", "medium", "high"
 const GLOBAL_REASONING_EFFORT = "medium"; 
 
-// 🔥 2. KHAS UNTUK DEEPSEEK (Flash 0731 / Pro 0813):
-//    Pilihan: "none", "low", "high", "max"
+// 2. DeepSeek V4 (Flash / Pro): "none", "low", "high", "max"
 const DEEPSEEK_REASONING_MODE = "high"; 
 
-// 🔥 3. KHAS UNTUK MOONSHOT AI (Kimi-K3 / Kimishot):
-//    Pilihan rasmi: "low" (cepat/jimat), "high" (standard), "max" (maksimum/agentic)
-const MOONSHOT_REASONING_MODE = "max"; 
+// 3. Moonshot AI (Kimi-K3): "low", "high", "max"
+const MOONSHOT_REASONING_MODE = "high"; 
 
-// 4. NAK TUNJUK ISI THINKING ATAU TIDAK:
-// true  = Tunjuk teks <think> / reasoning_content
-// false = Bersihkan dan bagi jawapan terus
+// 4. Papar atau sorok teks <think>
 const SHOW_REASONING = false; 
 // ============================================================================
 
 const MODEL_MAPPING = {
   'gpt-4o': 'nvidia/nemotron-3-ultra-550b-a55b',
   'claude-3-sonnet': 'z-ai/glm4.7',
-  'gemini-pro': 'moonshotai/kimi-k3',
+  'gemini-pro': 'z-ai/glm-5.1',
   'gemma-romance': 'nvidia/nemotron-3-super-120b-a12b',
   'claude-3-haiku-20240307': 'minimaxai/minimax-m3',
   'gpt-4o-latest': 'minimaxai/minimax-m2.7',
   'claude-3-opus-20240229': 'deepseek-ai/deepseek-v4-flash-0731',
   'gpt-4-0613': 'deepseek-ai/deepseek-v4-pro-0813',
-  
-  // 👉 Model Kimi K3 Moonshot AI
   'kimi-k3': 'moonshotai/kimi-k3',
   'kimishot-k3': 'moonshotai/kimi-k3',
   'moonshot-k3': 'moonshotai/kimi-k3'
 };
 
 function filterReasoning(text) {
-  if (!text) return text;
+  if (!text || typeof text !== 'string') return text;
   
   let cleanText = text;
   cleanText = cleanText.replace(/<think>[\s\S]*?<\/think>/gi, '');
@@ -75,44 +69,46 @@ function filterReasoning(text) {
   return cleanText.trim();
 }
 
+function extractText(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content.map(p => (typeof p === 'string' ? p : p?.text || '')).join('\n');
+  }
+  if (typeof content === 'object' && content !== null) {
+    return content.text || JSON.stringify(content);
+  }
+  return String(content || '');
+}
+
 function getNemotronPromptByLevel(level) {
   switch (level) {
-    case 'low':
-      return "\n\n[SYSTEM INSTRUCTION: Provide a brief, concise reasoning inside <think>...</think> before giving the final answer.]";
+    case 'low': return "\n\n[SYSTEM INSTRUCTION: Provide a brief, concise reasoning inside <think>...</think> before giving the final answer.]";
     case 'high':
-    case 'max':
-      return "\n\n[SYSTEM INSTRUCTION: You must think extremely deeply, analyze all edge cases, verify step-by-step logic thoroughly, and plan exhaustively inside <think>...</think> tags before writing your final response.]";
+    case 'max': return "\n\n[SYSTEM INSTRUCTION: You must think extremely deeply, analyze all edge cases, verify step-by-step logic thoroughly, and plan exhaustively inside <think>...</think> tags before writing your final response.]";
     case 'medium':
-    default:
-      return "\n\n[SYSTEM INSTRUCTION: Please reason through this carefully step-by-step inside <think>...</think> tags before providing the final answer.]";
+    default: return "\n\n[SYSTEM INSTRUCTION: Please reason through this carefully step-by-step inside <think>...</think> tags before providing the final answer.]";
   }
 }
 
 function getDeepSeekPromptByLevel(level) {
   switch (level) {
-    case 'low':
-      return "\n\n[SYSTEM INSTRUCTION: Provide a minimal, concise reasoning inside <think>...</think> before answering.]";
-    case 'max':
-      return "\n\n[SYSTEM INSTRUCTION: Engage in exhaustive, rigorous reasoning inside <think>...</think>. Explore edge cases and verify step-by-step logic thoroughly before answering.]";
+    case 'low': return "\n\n[SYSTEM INSTRUCTION: Provide a minimal, concise reasoning inside <think>...</think> before answering.]";
+    case 'max': return "\n\n[SYSTEM INSTRUCTION: Engage in exhaustive, rigorous reasoning inside <think>...</think>. Explore edge cases and verify step-by-step logic thoroughly before answering.]";
     case 'high':
-    default:
-      return "\n\n[SYSTEM INSTRUCTION: Reason step-by-step thoroughly inside <think>...</think> before answering.]";
+    default: return "\n\n[SYSTEM INSTRUCTION: Reason step-by-step thoroughly inside <think>...</think> before answering.]";
   }
 }
 
-// System guidance khas untuk Kimi-K3 Moonshot AI
 function getMoonshotPromptByLevel(level) {
   switch (level) {
-    case 'low':
-      return "\n\n[SYSTEM INSTRUCTION: Keep thinking process short, concise, and focused on core constraints before outputting response.]";
-    case 'max':
-      return "\n\n[SYSTEM INSTRUCTION: Perform maximum long-horizon reasoning and thorough multi-step planning before providing the final result.]";
+    case 'low': return "\n\n[SYSTEM INSTRUCTION: Keep thinking process short, concise, and focused on core constraints before outputting response.]";
+    case 'max': return "\n\n[SYSTEM INSTRUCTION: Perform maximum long-horizon reasoning and thorough multi-step planning before providing the final result.]";
     case 'high':
-    default:
-      return "\n\n[SYSTEM INSTRUCTION: Reason step-by-step carefully to solve the problem thoroughly.]";
+    default: return "\n\n[SYSTEM INSTRUCTION: Reason step-by-step carefully to solve the problem thoroughly.]";
   }
 }
 
+// 🚀 Endpoint terbuka tanpa sebarang sekatan auth
 app.post('/v1/chat/completions', async (req, res) => {
   try {
     let { model, messages, temperature, max_tokens, stream, reasoning_effort, top_p } = req.body;
@@ -125,7 +121,7 @@ app.post('/v1/chat/completions', async (req, res) => {
     const isNemotron = nimModel.toLowerCase().includes('nemotron');
     const isMoonshot = nimModel.toLowerCase().includes('moonshot') || nimModel.toLowerCase().includes('kimi');
 
-    // 👉 Tentukan effort level mengikut model masing-masing
+    // Tentukan effort level
     let effortLevel;
     if (isMoonshot) {
       effortLevel = (reasoning_effort || MOONSHOT_REASONING_MODE).toLowerCase();
@@ -139,84 +135,79 @@ app.post('/v1/chat/completions', async (req, res) => {
 
     const isThinkingActive = effortLevel !== "none" && effortLevel !== "off" && effortLevel !== "false";
 
+    // Format messages mengikut standard OpenAI yang selamat untuk NIM
     let sanitizedMessages = [];
     if (Array.isArray(messages)) {
       for (let m of messages) {
-        if (!m || !m.content || m.content.trim() === "") continue; 
-        let role = m.role === 'system' ? 'user' : m.role; 
+        if (!m) continue;
+        let text = extractText(m.content);
+        if (!text || text.trim() === "") continue;
+
+        let role = m.role === 'model' ? 'assistant' : (m.role || 'user');
         
+        // Elak ralat perulangan role yang sama berturut-turut
         if (sanitizedMessages.length > 0 && sanitizedMessages[sanitizedMessages.length - 1].role === role) {
-          sanitizedMessages[sanitizedMessages.length - 1].content += "\n\n" + m.content;
+          sanitizedMessages[sanitizedMessages.length - 1].content += "\n\n" + text;
         } else {
-          sanitizedMessages.push({ role: role, content: m.content });
+          sanitizedMessages.push({ role: role, content: text });
         }
       }
     }
 
-    // Suntik prompt sokongan mengikut model
+    if (sanitizedMessages.length === 0) {
+      sanitizedMessages = [{ role: 'user', content: 'Hello' }];
+    }
+
+    // Suntik prompt sokongan pemikiran jika aktif
     if (isThinkingActive && sanitizedMessages.length > 0) {
+      const lastIdx = sanitizedMessages.length - 1;
       if (isMoonshot) {
-        sanitizedMessages[sanitizedMessages.length - 1].content += getMoonshotPromptByLevel(effortLevel);
+        sanitizedMessages[lastIdx].content += getMoonshotPromptByLevel(effortLevel);
       } else if (isDeepSeek) {
-        sanitizedMessages[sanitizedMessages.length - 1].content += getDeepSeekPromptByLevel(effortLevel);
+        sanitizedMessages[lastIdx].content += getDeepSeekPromptByLevel(effortLevel);
       } else if (isNemotron) {
-        sanitizedMessages[sanitizedMessages.length - 1].content += getNemotronPromptByLevel(effortLevel);
+        sanitizedMessages[lastIdx].content += getNemotronPromptByLevel(effortLevel);
       } else if (isGLM) {
-        sanitizedMessages[sanitizedMessages.length - 1].content += "\n\n[SYSTEM INSTRUCTION: Think deeply before answering. Use <think> tags for reasoning.]";
+        sanitizedMessages[lastIdx].content += "\n\n[SYSTEM INSTRUCTION: Think deeply before answering. Use <think> tags for reasoning.]";
       }
     }
 
-    const isReasoningModel = isDeepSeek || isMoonshot;
-
+    // Parameter asas yang serasi dengan semua model
     const nimRequest = {
       model: nimModel,
       messages: sanitizedMessages,
-      // Parameter sampling yang disyorkan
-      temperature: temperature !== undefined ? temperature : (isReasoningModel ? 1.0 : 0.6),
-      top_p: top_p !== undefined ? top_p : (isReasoningModel ? 0.95 : 1.0),
-      max_tokens: max_tokens || (isReasoningModel ? 16384 : 4096),
+      temperature: temperature !== undefined ? Number(temperature) : 0.7,
+      max_tokens: max_tokens ? Math.min(Number(max_tokens), 8192) : 4096,
       stream: isStream
     };
 
-    // 1. Nemotron
-    if (isNemotron) {
-      nimRequest.chat_template_kwargs = {
-        enable_thinking: isThinkingActive
-      };
+    if (top_p !== undefined && Number(top_p) > 0 && Number(top_p) <= 1.0) {
+      nimRequest.top_p = Number(top_p);
     }
 
-    // 2. DeepSeek V4
-    if (isDeepSeek) {
+    // 🔥 HANYA hantar parameter thinking pada model yang sah untuk elak Error 400
+    if (isNemotron) {
+      nimRequest.chat_template_kwargs = { enable_thinking: isThinkingActive };
+    } else if (isDeepSeek) {
       nimRequest.chat_template_kwargs = {
         thinking: isThinkingActive,
         ...(isThinkingActive ? { reasoning_effort: effortLevel } : {})
       };
-      if (isThinkingActive) {
-        nimRequest.reasoning_effort = effortLevel;
-      }
+    } else if (isMoonshot) {
+      nimRequest.reasoning_effort = effortLevel;
     }
 
-    // 3. Moonshot AI / Kimi-K3
-    if (isMoonshot) {
-      // Kimi K3 menyokong top-level reasoning_effort serta template kwargs
-      nimRequest.reasoning_effort = effortLevel; // "low" | "high" | "max"
-      nimRequest.chat_template_kwargs = {
-        thinking: true,
-        reasoning_effort: effortLevel
-      };
-    }
-
+    // Call ke NVIDIA NIM
     if (!isStream) {
       const response = await axios.post(`${NIM_API_BASE}/chat/completions`, nimRequest, {
         headers: {
-          'Authorization': `Bearer ${NIM_API_KEY}`,
+          'Authorization': `Bearer ${NIM_API_KEY.trim()}`,
           'Content-Type': 'application/json'
         }
       });
 
       if (response.data && response.data.choices && response.data.choices[0] && response.data.choices[0].message) {
         let msg = response.data.choices[0].message;
-        
         if (!SHOW_REASONING) {
           if (msg.content) msg.content = filterReasoning(msg.content);
           if (msg.reasoning_content) delete msg.reasoning_content;
@@ -228,7 +219,7 @@ app.post('/v1/chat/completions', async (req, res) => {
     } else {
       const response = await axios.post(`${NIM_API_BASE}/chat/completions`, nimRequest, {
         headers: {
-          'Authorization': `Bearer ${NIM_API_KEY}`,
+          'Authorization': `Bearer ${NIM_API_KEY.trim()}`,
           'Content-Type': 'application/json'
         },
         responseType: 'stream'
@@ -253,14 +244,13 @@ app.post('/v1/chat/completions', async (req, res) => {
     }
 
   } catch (error) {
-    console.error('🔥 ERROR:', error.response?.data || error.message);
+    const statusCode = error.response?.status || 500;
+    const errorData = error.response?.data || { error: { message: error.message } };
+    
+    console.error(`🔥 ERROR [${statusCode}]:`, JSON.stringify(errorData, null, 2));
+
     if (!res.headersSent) {
-      res.status(error.response?.status || 500).json({ 
-        error: { 
-          message: error.message, 
-          details: error.response?.data 
-        } 
-      });
+      return res.status(statusCode).json(errorData);
     } else {
       res.end(); 
     }
